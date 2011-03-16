@@ -1,93 +1,179 @@
-START = 20
-
-module MyFuncs
-  def array_deep_copy(from_array) 
-    to_array = Array.new
-    from_array.each { |ary| to_array += [ary.dup] }
-    return to_array
-  end
-
-  def array_mul(ary1, ary2)
-    ret_ary = []
-    ary1.each do |i|
-      ary2.each do |i2|
-        ret_ary = ret_ary.push([i, i2])
-      end
-    end
-    return ret_ary
-  end
-end
-
+START = 30
+ROW_NUM = 10
+RESPUBLICA = %w(R E S P U B L I K A)
 
 class Game
 
-  include MyFuncs
-
-  attr_reader :game_over, :current_player, :conflicted, :owning_player
+  SHIPS_SET = [4, 3, 3, 2, 2, 2, 1]
   
-  def initialize(size, square_size, app)
-    @app = app
-    @size = size
-    @square_size = square_size
-    @board = []
-    @captures = { :black => 0, :white => 0 }
-    @points = { :black => 0, :white => 0 }
-    @last_passed = false
-    @game_over = false
-    for i in 0...@size
-      a = []
-      for j in 0...@size
-        a[j] = 0
-      end
-      @board[i] = a
+  attr_reader :board1, :board2, :history1, :history2, :state
+  
+  CELL_STATES = [:clean, :ship, :wounded,  :killed]
+  GAME_STATES = [:ship_setup, :battle]
+  
+  def initialize
+    @board1 = Array.new(ROW_NUM, [])
+    for i in 0... @board1.size
+      @board1[i] = Array.new(ROW_NUM, :clean)
     end
-    @current_player = "black"
-    @history = [{ :board => [], :white_captures => 0, :black_captures => 0 }] #for checking for illegal ko moves and undoing, this will hold hashes of board positions and scores
-    @move_count = 1
-    @test_board = array_deep_copy(@board) #for various tests
-    @owning_player = 0 #for territory counting at end game
-    @conflicted = false #ditto
+    @board2 = Array.new(ROW_NUM, [])
+    for i in 0... @board2.size
+      @board2[i] = Array.new(ROW_NUM, :clean)
+    end
+    
+    @history1 = Array.new(ROW_NUM, [])
+    for i in 0... @history1.size
+      @history1[i] = Array.new(ROW_NUM, nil)
+    end
+    @history2 = Array.new(ROW_NUM, [])
+    for i in 0... @history2.size
+      @history2[i] = Array.new(ROW_NUM, nil)
+    end
+    
+    @state = :ship_setup
   end
   
-  
-  def illegal_move?(x, y)
-    if (occupied?(x, y) || suicide?(x, y) || ko?(x, y))
-      return true
-    else 
-      return false
-    end
-  end
-  
-  def occupied?(x, y)
-    if(@board[x][y] != 0)
-      return true
+  def setup_ship_rc(row, col)
+    #@history1 = copy_array(@board1)
+    if @board1[row][col] == :clean
+      @board1[row][col] = :ship
     else
-      return false
+      @board1[row][col] = :clean
     end
   end
-  
-  def off_board?(x, y)
-    return (x >= @size || x < 0 || y >= @size || y < 0)
+
+  def setup_ship(coords)
+    coords.each do |coord|
+      col = RESPUBLICA.index(coord[0..0])
+      row = coord[1..1].to_i - 1
+      
+      setup_ship_rc(row, col)
+    end
   end
-  
-  def play_to_board(x, y)
-    play_at_loc(x, y)
-    [[-1,0],[0,-1],[1,0],[0,1]].each do |offset|
-      x_offset = offset[0]
-      y_offset = offset[1]
-      if(dead?(x+x_offset, y+y_offset, @current_player))
-        kill(x+x_offset, y+y_offset)
+
+  def reset_array(board, value)
+    for i in 0...board.size
+      for j in 0...board[i].size
+        board[i][j] = value
       end
     end
   end
   
+  def reset_free_cells
+    @free_cells ||= Array.new(ROW_NUM*RESPUBLICA.size)
+    index = 0
+    for row in 1..ROW_NUM
+      for col in RESPUBLICA
+        @free_cells[index] = "#{col}#{row}"
+        index +=1
+      end
+    end
+  end
   
-  def draw_x(x, y)
-    size = @square_size
-    @app.stroke rgb(255,0,0,0.9)
-    @app.line(START+x*size-size/2-1, START+y*size-size/2-1, START+x*size+size/2-1, START+y*size+size/2-1)
-    @app.line(START+x*size-size/2-1, START+y*size+size/2-1, START+x*size+size/2-1, START+y*size-size/2-1)
-    @app.stroke "#000000"
+  def get_random_cell(cells)
+    if cells.empty?
+      nil
+    else
+      cells[rand(cells.size)]
+    end  
+  end
+  
+  # Метод расставляет корабли случайным образом на поле
+  def setup_random_ships(board, history)
+    reset_array(board, :clean)
+    reset_array(history, nil)
+    reset_free_cells
+    
+    #ships = [%w(R1 E1 S1 P1), %w(B1 L1 I1), %w(A1 A2 A3)]
+    ships = get_random_ships
+    ships.each{|ship| setup_ship(ship)}
+  end
+  
+  # Метод создает массив кораблей расставленых случайным образом и возвращает в качестве результата.
+  # Алгоритм:
+  # - перечисляя все свободные корабли
+  #   - взять следующий корабль
+  #   - найти случайную пустую клеточку поля
+  #     - если найдена, попытаться установить корабль в эту клеточку 
+  #       - если попытка удалась - вычеркнуть из списка свободных клеточек координаты корабля и смежные, перейти к следующему кораблю.
+  #       - если попытка не удалась, вычеркнуть клеточку из свободных для данного корабля, взять следующую случайную свободную клеточку и попытаться установить туда.
+  #     - если свободные клеточки закончились - завершить установку отказом (такое возможно в теории, если поле слишком маленькое а кораблей слишком много)  
+  # 
+  # детали:
+  # попытаться установить в клеточку значит:
+  #  - выбрать случайное направление (0 направо, 1 вниз, 2 налево, 3 вверх)
+  #  - попытаться установить в данном направлении
+  #  - если попытка неуспешна - попытаться установить в следующем направлении по часовой стрелке.
+  #  - если не удалось установить ни в одном из четырех направлений - считать попытку неуспешной.
+      
+  def get_random_ships
+ 
+    ships = Array.new(SHIPS_SET.size)
+    for i in 0...ships.size do
+      ships[i] = Array.new(SHIPS_SET[i])
+    end
+    
+    for ship in ships do 
+      
+      cell = get_random_cell(@free_cells)
+      while cell != nil
+        if setup_random_ship(ship) == true
+          strike_off_ship_cells_and_neighbours(ship)
+          break
+        else
+          @free_cells.delete(cell)
+        end
+      end
+
+    end
+    
+    ships
+  end
+  
+  # вычеркнуть из списка свободных клеточек координаты корабля и смежные
+  def strike_off_ship_cells_and_neighbours(ship)
+    TODO
+    @free_cells -= get_cells(ship) + get_neighbour_cells(ship)
+  end
+  
+  # Пытается установить корабль в случайную клеточку поля и возвращает "успешно" или "неуспешно"
+  def setup_random_ship(ship)
+    coord = get_random_free_cell
+    v = get_random_vector
+    success = false
+    for i in 0..3
+      if try_setup_ship(ship, coord, (vector+i)%4 )
+        success = true
+        break
+      end
+    end
+    return false if !success
+
+    result = try_setup_ship(ship, coord, vector)
+    if result == false
+      v += 1
+    end
+  end
+  
+  def fire(row, col)
+    
+  end
+  
+  private
+  
+  def copy_array(source)
+    result = source.dup
+    for i in 0...source.size
+      if source[i].is_a? Array
+        result[i] = []
+        for j in 0...source[i].size
+          result[i][j] = source[i][j]
+        end
+      else
+        result[i] = source[i].dup
+      end
+    end
+    result
   end
   
 end
@@ -95,23 +181,48 @@ end
 
 Shoes.app :width => 800, :height => 600 do
     
-  @field_size = 10 #default
-  @square_size = self.height/@field_size/2
+  STATE_COLORS = {    
+    :clean => dodgerblue,
+    :ship => gold,
+    :wounded => magenta,
+    :killed => red
+  }
+    
+  @cell_size = self.height/ROW_NUM/2
+  @field_size = @cell_size * ROW_NUM
   
-  extend MyFuncs
-  
-  def render_field(start_x, start_y)
+  def render_board(start_x, start_y, board, history)
+    #fill dodgerblue
+    #rect start_x, start_y, @field_size, @field_size
+    
     x = start_x ; y = start_y
     self.strokewidth(1)
-    @field_size.times do 
-      line(x, y, x, (@field_size-1)*@square_size + start_y)
-      x += @square_size
+    (ROW_NUM + 1).times do |i|
+      para RESPUBLICA[i].to_s, :left => x + 6, :top => y - 22, :font => '13px'
+      line(x, y, x, ROW_NUM*@cell_size + start_y)
+      x += @cell_size
     end
+    
     x = start_x
-    @field_size.times do
-      line(x, y, @square_size*(@field_size-1)+start_x, y)
-      y += @square_size
-    end   
+    (ROW_NUM + 1).times do |i|
+      para((i+1).to_s, :left => x -22, :top => y + 6, :font => '13px') if i < ROW_NUM 
+      line(x, y, @cell_size*ROW_NUM+start_x, y)
+      y += @cell_size
+    end
+    render_cells(start_x, start_y, board, history)
+  end
+  
+  def render_cells(start_x, start_y, board, history)
+    # fill cells with state colors 
+    for row in 0...board.size
+      for col in 0...board[row].size
+        if board[row][col] != history[row][col]
+          fill STATE_COLORS[board[row][col]]
+          rect start_x + col*@cell_size, start_y + row*@cell_size, @cell_size, @cell_size
+        end
+      end
+    end
+
   end
   
   def render_pane
@@ -122,26 +233,52 @@ Shoes.app :width => 800, :height => 600 do
         #para("Убито: #{0}", :top => 100, :left => 600)
         
         #line(590, 520, 790, 520)
-        button("Новая игра:", :width => 100, :height => 30, :top => 540, :right => 100) do
-          @game = Game.new(@field_size, @square_size, self)
+        button("New game", :width => 100, :height => 30, :top => 410, :left => 70) do
+          @game = Game.new
           render_pane
         end
+        
+        button("Random Ships", :width => 100, :height => 30, :top => 410, :left => 180) do
+          @game.setup_random_ships(@game.board1, @game.history1)
+          render_board(START, START, @game.board1, @game.history1)
+        end        
       end
       
-      render_field(START, START)
-      render_field(START + self.width/2, START)
-#      @game.draw()
+      render_board(START, START, @game.board1, @game.history1)
+      render_board(START + self.width/2, START, @game.board2, @game.history2)
     end
   end
   
   $app = self
   
-  @game = Game.new(@field_size, @square_size, self)
+  @game = Game.new
   render_pane
-  click do |button, x, y|
-    if(x < @square_size*@field_size && y < @square_size*@field_size)
-      x_coord = x/@square_size
-      y_coord = y/@square_size
-    end
+  
+  coord = para("", :top => 500, :left => 10)
+  motion do |x,y|
+    coord.text = "#{x}:#{y}"
   end
+  
+  click do |button, x, y|
+    x = x - START
+    y = y - START
+
+    row = y/@cell_size
+    col = x/@cell_size
+    
+    if x < 0 or y < 0  
+      alert("Недолет! #{x}:#{y}")
+    elsif x > @field_size or y > @field_size
+      alert("Перелет! #{x}:#{y} ")
+    else  
+      if @game.state == :ship_setup
+        @game.setup_ship_rc(row, col)
+      elsif @game.state == :battle
+        @game.fire(row, col)
+      end
+    end
+    render_cells(START, START, @game.board1, @game.history1)
+  end
+  
 end
+
