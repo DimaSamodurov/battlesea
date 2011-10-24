@@ -22,16 +22,16 @@ Shoes.app :width => 800, :height => 600 do
     
     x = start_x ; y = start_y
     self.strokewidth(1)
-    (board.size + 1).times do |i|
-      para RESPUBLIKA[i].to_s, :left => x + 6, :top => y - 22, :font => '13px'
-      line(x, y, x, board.size*@cell_size + start_y)
+    (board.row_size + 1).times do |i|
+      para R[i].to_s, :left => x + 6, :top => y - 22, :font => '13px'
+      line(x, y, x, board.row_size*@cell_size + start_y)
       x += @cell_size
     end
     
     x = start_x
-    (board.size + 1).times do |i|
+    (board.col_size + 1).times do |i|
       para((i+1).to_s, :left => x -22, :top => y + 6, :font => '13px') if i < board.size 
-      line(x, y, @cell_size*board.size+start_x, y)
+      line(x, y, @cell_size*board.col_size+start_x, y)
       y += @cell_size
     end
     render_cells(start_x, start_y, board, history)
