@@ -124,10 +124,11 @@ class Board
 
   def get_random_ships
 
-    ships = @ship_set.inject([]){|memo, size| memo << Array.new(size)}.shuffle
-    free_cells = get_free_cells.shuffle
+    ships = @ship_set.shuffle.map{|size| Array.new(size)}
+
 
     for ship in ships do
+      free_cells = get_free_cells.shuffle
       cell = free_cells.sample
       if cell.nil?
         raise "Can't set up ships. Try to reduce ship number or size, or increase size of the board."
@@ -151,11 +152,12 @@ class Board
 
   #TODO
   # Пытается установить корабль в заданную клеточку поля во всех направлениях и возвращает "направление" или "nil"
-  def try_setup_ship(ship_size, cell)
+  def where_can_place?(ship_size, cell)
+    result = []
     [Direction.up, Direction.left, Direction.down, Direction.right].shuffle.each do |direction|
-      return direction if can_place?(ship_size, cell, direction)
+      result << direction if can_place?(ship_size, cell, direction)
     end
-    nil
+    result.empty? ? nil : result
   end
 
   # tested

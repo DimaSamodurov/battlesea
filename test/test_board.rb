@@ -1,20 +1,13 @@
-require 'test/unit'
-require_relative '../board'
+require_relative 'test_helper'
+require 'board'
 
-class TestBoard < MiniTest::Unit::TestCase
-  def setup
-    #@board = Board.new
-  end
+describe Board do
 
-  def teardown
-    ## Nothing really
-  end
-
-  def test_initialize_default
+  it "should initialize with default values" do
     assert_equal "Matrix[[empty, empty, empty], [empty, empty, empty], [empty, empty, empty]]", Board.new(:header => 'RES').to_s
   end
 
-  def test_initialize_with_sample
+  it "should initialize with sample values" do
     b = Board.new(:sample =>
                       [[0, 0, 3],
                        [2, 0, 0],
@@ -23,7 +16,7 @@ class TestBoard < MiniTest::Unit::TestCase
     assert_equal "Matrix[[empty, empty, killed], [wounded, empty, empty], [ship, empty, ship]]", b.to_s
   end
 
-  def test_initialize_with_block
+  it "should initialize with block" do
     sample =
         [[0, 0, 3],
          [2, 0, 0],
@@ -35,28 +28,45 @@ class TestBoard < MiniTest::Unit::TestCase
     assert_equal "Matrix[[empty, empty, killed], [wounded, empty, empty], [ship, empty, ship]]", b.to_s
   end
 
-  def test_ship_around?
-    b = Board.new(:sample => [[0, 0, 0], [0, 0, 0], [0, 0, 0]])
-    b.each_with_index { |c, row, col| assert !b.ship_around?(row, col), "Found ship around #{row},#{col}, but should not." }
-
-    b = Board.new(:sample => [[0, 0, 0], [0, 1, 0], [0, 0, 0]])
-    b.each_with_index { |c, row, col| assert b.ship_around?(row, col), "Not found ship around #{row},#{col}, but should be." }
-
-    b = Board.new(:sample =>
+  describe "free_cells" do
+    before do
+      @b =  Board.new(:sample =>
                       [[0, 0, 0],
                        [1, 0, 0],
-                       [0, 0, 1]]
-    )
-    b.each_with_index do |c, row, col|
-      if [0, 2] == [row, col]
-        assert !b.ship_around?(row, col), "Found ship around #{row},#{col}, but should not."
-      else
-        assert b.ship_around?(row, col), "Not found ship around #{row},#{col}, but should be."
+                       [1, 0, 1]])
+    end
+
+    it "should return array of free cells" do
+      @b.get_free_cells.must_equal [[0,2]]
+      @b[1,0]= 0
+      @b.get_free_cells.sort.must_equal [[0,0], [0,1], [0,2]]
+    end
+  end
+
+  describe "ship_around" do
+    it "should detect ship around a cell" do
+      b = Board.new(:sample => [[0, 0, 0], [0, 0, 0], [0, 0, 0]])
+      b.each_with_index { |c, row, col| assert !b.ship_around?(row, col), "Found ship around #{row},#{col}, but should not." }
+
+      b = Board.new(:sample => [[0, 0, 0], [0, 1, 0], [0, 0, 0]])
+      b.each_with_index { |c, row, col| assert b.ship_around?(row, col), "Not found ship around #{row},#{col}, but should be." }
+
+      b = Board.new(:sample =>
+                        [[0, 0, 0],
+                         [1, 0, 0],
+                         [0, 0, 1]]
+      )
+      b.each_with_index do |c, row, col|
+        if [0, 2] == [row, col]
+          assert !b.ship_around?(row, col), "Found ship around #{row},#{col}, but should not."
+        else
+          assert b.ship_around?(row, col), "Not found ship around #{row},#{col}, but should be."
+        end
       end
     end
   end
 
-  def test_can_place
+  describe "can_place" do
     def ok(test)
       assert test,  "Can not place a ship, but should be able to."
     end
@@ -65,25 +75,27 @@ class TestBoard < MiniTest::Unit::TestCase
       assert !test,  "Can place a ship, but should not be able to."
     end
 
-    b = Board.new(:sample =>
-                      [[0, 0, 0, 0],
-                       [0, 0, 0, 0],
-                       [1, 0, 0, 0],
-                       [0, 0, 1, 0]])
+    it "should answer whether ship can be placed in the specified cell with the specified direction" do
+      b = Board.new(:sample =>
+                        [[0, 0, 0, 0],
+                         [0, 0, 0, 0],
+                         [1, 0, 0, 0],
+                         [0, 0, 1, 0]])
 
-    ok  b.can_place?(3, [0, 0], Direction.right)
-    ok  b.can_place?(3, [0, 1], Direction.right)
-    nok b.can_place?(3, [0, 2], Direction.right)
-    nok b.can_place?(3, [0, 0], Direction.down)
-    nok b.can_place?(3, [0, 4], Direction.down)
-    nok b.can_place?(3, [2, 3], Direction.up)
-    ok  b.can_place?(2, [1, 3], Direction.up)
-    nok b.can_place?(2, [0, 0], Direction.down)
-    ok  b.can_place?(1, [0, 0], Direction.down)
-    ok  b.can_place?(2, [1, 2], Direction.up)
+      ok  b.can_place?(3, [0, 0], Direction.right)
+      ok  b.can_place?(3, [0, 1], Direction.right)
+      nok b.can_place?(3, [0, 2], Direction.right)
+      nok b.can_place?(3, [0, 0], Direction.down)
+      nok b.can_place?(3, [0, 4], Direction.down)
+      nok b.can_place?(3, [2, 3], Direction.up)
+      ok  b.can_place?(2, [1, 3], Direction.up)
+      nok b.can_place?(2, [0, 0], Direction.down)
+      ok  b.can_place?(1, [0, 0], Direction.down)
+      ok  b.can_place?(2, [1, 2], Direction.up)
+    end
   end
 
-  def test_try_setup_ship
+  describe "where_can_place?" do
     def ok(test)
       assert test,  "Can not set up a ship, but should be able to."
     end
@@ -92,17 +104,18 @@ class TestBoard < MiniTest::Unit::TestCase
       assert !test,  "Can set up a ship, but should not be able to."
     end
 
-    b = Board.new(:sample =>
-                      [[0, 0, 0, 0],
-                       [1, 0, 0, 0],
-                       [1, 0, 0, 0],
-                       [0, 0, 1, 0]])
+    it "tries to place ship in the specified cell with any direction" do
+      b = Board.new(:sample =>
+                        [[0, 0, 0, 0],
+                         [1, 0, 0, 0],
+                         [1, 0, 0, 0],
+                         [0, 0, 1, 0]])
 
-    ok  b.try_setup_ship(3, [0,0])
-    ok  b.try_setup_ship(3, [0,1])
-    ok  b.try_setup_ship(3, [0,2])
-    nok b.try_setup_ship(3, [1,2])
-    ok  b.try_setup_ship(3, [1,2])
+      b.where_can_place?(3, [0,0]).must_be_nil
+      b.where_can_place?(3, [0,1]).must_be_nil
+      b.where_can_place?(3, [0,2]).must_be_nil
+      b.where_can_place?(2, [0,2]).sort.must_equal [Direction.right, Direction.down].sort
+    end
   end
 
   def test_cell_to_rc
