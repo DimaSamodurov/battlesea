@@ -3,48 +3,54 @@ ROW_NUM = 10
 
 require 'game'
 
-
 Shoes.app :width => 800, :height => 600 do
     
   STATE_COLORS = {    
     :empty => dodgerblue,
     :ship => gold,
     :wounded => magenta,
-    :killed => red
+    :killed => red,
+    :miss => gray,
+    nil => white
   }
     
   @cell_size = self.height/ROW_NUM/2
   @field_size = @cell_size * ROW_NUM
   
-  def render_board(start_x, start_y, board, history)
-    #fill dodgerblue
-    #rect start_x, start_y, @field_size, @field_size
-    
+  def render_board(start_x, start_y, board, show_ships)
     x = start_x ; y = start_y
     self.strokewidth(1)
     (board.row_size + 1).times do |i|
-      para R[i].to_s, :left => x + 6, :top => y - 22, :font => '13px'
+      para board.header[i], :left => x + 6, :top => y - 22, :font => '13px'
       line(x, y, x, board.row_size*@cell_size + start_y)
       x += @cell_size
     end
     
     x = start_x
     (board.col_size + 1).times do |i|
-      para((i+1).to_s, :left => x -22, :top => y + 6, :font => '13px') if i < board.size 
+      para((i+1).to_s, :left => x -22, :top => y + 6, :font => '13px') if i < board.row_size
       line(x, y, @cell_size*board.col_size+start_x, y)
       y += @cell_size
     end
-    render_cells(start_x, start_y, board, history)
+    render_cells(start_x, start_y, board, show_ships)
+
+    stack do
+      para("Ранено: #{board.count :wounded}", :top => start_y + (board.col_size+1)*@cell_size, :left => start_x, :font => '13px')
+      para("Убито: #{board.count :killed}", :top => start_y + (board.col_size+2)*@cell_size, :left => start_x, :font => '13px')
+    end
   end
   
-  def render_cells(start_x, start_y, board, history)
+  def render_cells(start_x, start_y, board, show_ships)
     # fill cells with state colors 
-    for row in 0...board.size
-      for col in 0...board[row].size
-        if board[row][col] != history[row][col]
-          fill STATE_COLORS[board[row][col]]
-          rect start_x + col*@cell_size, start_y + row*@cell_size, @cell_size, @cell_size
+    for row in 0...board.col_size
+      for col in 0...board.row_size
+        if board[row, col] == :ship and not show_ships
+          fill STATE_COLORS[:empty]
+        else
+          fill STATE_COLORS[board[row, col]]
         end
+
+        rect start_x + col*@cell_size, start_y + row*@cell_size, @cell_size, @cell_size
       end
     end
 
@@ -54,29 +60,27 @@ Shoes.app :width => 800, :height => 600 do
     clear do
       background rgb(219, 169, 108, 0.8)
       stack :margin_top => 10 do
-        #para("Ранено: #{0}", :top => 80, :left => 600)
-        #para("Убито: #{0}", :top => 100, :left => 600)
-        
-        #line(590, 520, 790, 520)
+
         button("New game", :width => 100, :height => 30, :top => 410, :left => 70) do
           @game = Game.new
           render_pane
         end
-        
-        button("Random Ships", :width => 100, :height => 30, :top => 410, :left => 180) do
-          @game.setup_random_ships(@game.board1, @game.history1)
-          render_board(START, START, @game.board1, @game.history1)
-        end        
       end
-      
-      render_board(START, START, @game.board1, @game.history1)
-      render_board(START + self.width/2, START, @game.board2, @game.history2)
+
+      render_boards
     end
   end
-  
+
+  def render_boards
+    render_board(START, START, @game.board1, false)
+    render_board(START + L2, START, @game.board2, true)
+  end
+
   $app = self
+  L2 = self.width/2
   
   @game = Game.new
+
   render_pane
   
   coord = para("", :top => 500, :left => 10)
@@ -95,15 +99,21 @@ Shoes.app :width => 800, :height => 600 do
       alert("Недолет! #{x}:#{y}")
     elsif x > @field_size or y > @field_size
       alert("Перелет! #{x}:#{y} ")
-    else  
-      if @game.state == :ship_setup
-        @game.setup_ship_rc(row, col)
-      elsif @game.state == :battle
-        @game.fire(row, col)
+    else
+      if @game.human_turn?
+        if @game.board1[row, col] != :miss
+          @game.board1.fire(row, col)
+          if @game.board1[row, col] == :miss
+            @game.notify_human_turned
+          end
+          render_pane
+          alert('Поздравляем, Вы выиграли!') if not @game.board1.alive?
+          alert('Вы проиграли!') if not @game.board2.alive?
+        end
+      else
+        alert("Не ваш ход!")
       end
     end
-    render_cells(START, START, @game.board1, @game.history1)
   end
   
 end
-

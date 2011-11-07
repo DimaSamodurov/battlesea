@@ -1,25 +1,23 @@
 require_relative 'utils'
-require 'matrix'
+require_relative 'matrix'
 require_relative 'ext'
 require_relative 'direction'
-require 'active_support/core_ext/module/delegation'
+require_relative 'delegation'
 
 class Board
   include Utils
   attr_reader :m,           # board matrix
-              :free_cells,  # array of free cells ['R1', 'R2'] or [[0, 0], [0, 1]]]]
-              :cells,       # array of cells ['R1', 'R2'] for quick turnaround
               :header,      # RESPUBLIKA
               :ship_set     # [4,3,2,2,2,1]
   alias_method :matrix, :m
 
-  delegate :row_size, :col_size, '[]', '[]=', :each_with_index, :to => :@m
+  delegate :row_size, '[]', '[]=', :each_with_index, :to => :@m
 
   # Creates a board. Size is specified by parameters in order: sample array, header.
   def initialize(options = {}, &block)
     default_options = {
         header: "RESPUBLIKA",
-        ship_set:  [4, 3, 3, 2, 2, 2, 1]
+        ship_set:  [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]
     }
     options = default_options.merge(options)
     header = options[:header]
@@ -29,24 +27,26 @@ class Board
     row_size = @header.size
     col_size = options[:col_size] || @header.size
     @ship_set = options[:ship_set]
+    @ships = []
     @m = Matrix.build(row_size, col_size) do |row, col|
       block_given? ?  yield(row, col).to_board : sample ?  sample[row][col].to_board : :empty
     end
   end
 
-  def all_cells
-    header.product((1..col_size).to_a).map(&:join)
+  def col_size
+    @m.column_size
   end
 
   def to_s
     @m.to_s
   end
 
-  # TODO
-  def get_free_cells
+  # returns array of free cells available on the  board
+  # tested
+  def free_cells
     result = []
     @m.each_with_index do |c,row,col|
-      next if c == :ship
+      next if c != :empty
       next if ship_around? row,col
       result << [row, col]
     end
@@ -62,21 +62,14 @@ class Board
       d = Direction.to_rc(i)
       coord = [row + d.first, col + d.last]
       next if coord.first < 0 || coord.last < 0
-      return true if @m[coord.first, coord.last] == :ship
+      return true if [:ship, :killed].include? @m[coord.first, coord.last]
     end
     false
   end
 
   def reset(state = :empty)
-    each_with_index {|e, row, col| m[row, col] = state}
-  end
-
-  # Метод расставляет корабли случайным образом на поле
-  def setup_random_ships
-    reset
-    #ships = [%w(R1 E1 S1 P1), %w(B1 L1 I1), %w(A1 A2 A3)]
-    ships = get_random_ships
-    ships.each{|coords| setup_ship(coords)}
+    @m.each_with_index {|e, row, col| m[row, col] = state}
+    @ships = []
   end
 
   # decode_rc('R1') = 0,0
@@ -86,19 +79,15 @@ class Board
     return row,col
   end
 
-  def setup_ship(coords)
-    coords.each do |coord|
-      row, col = decode_rc(coord)
-      setup_ship_rc(row, col)
+  # setup_ship([nil, nil, nil], [2,1], Direction.down) # set up 3 palub ship starting from R2C1 down.
+  # tested
+  def setup_ship(ship, cell, direction)
+    ship.size.times do |i|
+      @m[cell.first, cell.last] = :ship
+      ship[i] = cell
+      cell = cell.go direction
     end
-  end
-
-  def setup_ship_rc(row, col)
-    if m[row, col] == :empty
-      m[row,col] = :ship
-    else
-      m[row, col] = :empty
-    end
+    @ships << ship
   end
 
   def get_random_vector
@@ -122,24 +111,21 @@ class Board
   #  - если попытка неуспешна - попытаться установить в следующем направлении по часовой стрелке.
   #  - если не удалось установить ни в одном из четырех направлений - считать попытку неуспешной.
 
-  def get_random_ships
-
+  def setup_random_ships
     ships = @ship_set.shuffle.map{|size| Array.new(size)}
 
-
     for ship in ships do
-      free_cells = get_free_cells.shuffle
-      cell = free_cells.sample
-      if cell.nil?
-        raise "Can't set up ships. Try to reduce ship number or size, or increase size of the board."
+
+      cells = free_cells.shuffle
+      directions = []
+      while cells.any?
+        cell = cells.pop
+        directions = where_can_place?(ship.size, cell)
+        break if directions.any?
       end
 
-      #if setup_random_ship(cell, ship) == true
-      #  strike_off_ship_cells_and_neighbours(ship)
-      #  break
-      #else
-      #  @free_cells.delete(cell)
-      #end
+      raise "Can't set up ship #{ship.to_s}. No free cells left. Try to reduce ship number or size, or increase size of the board." unless directions.any?
+      setup_ship(ship, cell, directions.sample)
     end
 
     ships
@@ -150,21 +136,24 @@ class Board
     free_cells -= get_cells(ship) + get_neighbour_cells(ship)
   end
 
-  #TODO
-  # Пытается установить корабль в заданную клеточку поля во всех направлениях и возвращает "направление" или "nil"
+  # Пытается установить корабль в заданную клеточку поля во всех направлениях и возвращает массив возможных "направлений"
+  # tested
   def where_can_place?(ship_size, cell)
     result = []
     [Direction.up, Direction.left, Direction.down, Direction.right].shuffle.each do |direction|
       result << direction if can_place?(ship_size, cell, direction)
     end
-    result.empty? ? nil : result
+    result
   end
 
-  # tested
-  def out_of_board?(*coord)
+  def onboard?(*coord)
     coord = coord.flatten
     r,c = coord.first, coord.last
-    r < 0 || c < 0  || r >= @m.column_size || c >= @m.row_size
+    r >= 0 && c >= 0  && r < col_size && c < row_size
+  end
+
+  def out_of_board?(*coord)
+    !onboard?(*coord)
   end
 
   # tested. can_place(4, [1,1], Direction.left)
@@ -176,15 +165,65 @@ class Board
     return true
   end
 
-  private
+  # returns array of ship coords or nil if there is no ship in the cell
+  def ship_at(*cell)
+    cell = cell.flatten
+    return nil if @m.at(cell) == :empty
+    ship = [cell]
+    [Direction.up, Direction.right, Direction.down, Direction.left].each do |direction|
+      coord = cell.go direction
+      while onboard?(coord) && [:ship, :wounded, :killed].include?(@m.at(coord))
+        ship << coord
+        coord = coord.go direction
+      end
+    end
+    ship
+  end
 
+  def fire(*cell)
+    cell = cell.flatten
+    v = @m.at cell
+    r = case v
+          when :empty then :miss
+          when :ship then :wounded
+          else raise "don't hit other cells"
+        end
+
+    @m[cell.first, cell.last] = r
+    ship = ship_at cell
+    if ship.all? {|coord| @m.at(coord) == :wounded}
+      ship.each{|coord| @m[coord.first, coord.last] = :killed}
+    end
+    @m.at cell
+  end
+
+  def alive?
+    @m.each_with_index do |c,row,col|
+      return true if c == :ship
+    end
+    false
+  end
+
+  def count(value)
+    result = 0
+    @m.each_with_index do |c,row,col|
+      result += 1 if c == value
+    end
+    result
+  end
+
+  def wounded_count
+    count :wounded
+  end
+
+  def killed_count
+    count :killed
+  end
+
+  private
 
   # tested
   def cell_to_rc(cell)
     [@header.index(cell[0].upcase), cell[1..-1].to_i - 1]
   end
 end
-
-#b = Board.new()
-#b.setup_random_ships
-#p b.m.to_s

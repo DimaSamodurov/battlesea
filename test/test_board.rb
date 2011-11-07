@@ -33,13 +33,13 @@ describe Board do
       @b =  Board.new(:sample =>
                       [[0, 0, 0],
                        [1, 0, 0],
-                       [1, 0, 1]])
+                       [1, 0, 2]])
     end
 
     it "should return array of free cells" do
-      @b.get_free_cells.must_equal [[0,2]]
+      @b.free_cells.must_equal [[0,2]]
       @b[1,0]= 0
-      @b.get_free_cells.sort.must_equal [[0,0], [0,1], [0,2]]
+      @b.free_cells.sort.must_equal [[0,0], [0,1], [0,2]]
     end
   end
 
@@ -54,7 +54,7 @@ describe Board do
       b = Board.new(:sample =>
                         [[0, 0, 0],
                          [1, 0, 0],
-                         [0, 0, 1]]
+                         [0, 0, 2]]
       )
       b.each_with_index do |c, row, col|
         if [0, 2] == [row, col]
@@ -111,10 +111,50 @@ describe Board do
                          [1, 0, 0, 0],
                          [0, 0, 1, 0]])
 
-      b.where_can_place?(3, [0,0]).must_be_nil
-      b.where_can_place?(3, [0,1]).must_be_nil
-      b.where_can_place?(3, [0,2]).must_be_nil
+      b.where_can_place?(3, [0,0]).must_equal []
+      b.where_can_place?(3, [0,1]).must_equal []
+      b.where_can_place?(3, [0,2]).must_equal []
       b.where_can_place?(2, [0,2]).sort.must_equal [Direction.right, Direction.down].sort
+    end
+  end
+
+  describe "setup_ship" do
+    it "should pupulate ship array with cells" do
+      board = Board.new
+      ship = [nil, nil, nil]
+      board.setup_ship(ship, [2,1], Direction.down)
+      ship.must_equal [[2,1], [3,1], [4,1]]
+
+      board.setup_ship(ship, [2,1], Direction.right)
+      ship.must_equal [[2,1], [2,2], [2,3]]
+    end
+  end
+
+  describe "ship_at(cell)" do
+    it "should return ship" do
+      b = Board.new(:sample =>
+                        [[1, 0, 2, 0],
+                         [1, 0, 2, 0],
+                         [0, 0, 0, 0],
+                         [0, 3, 3, 3]]
+      )
+      b.ship_at([0,0]).sort.must_equal [[0,0],[1,0]].sort
+      b.ship_at([1,0]).sort.must_equal [[0,0],[1,0]].sort
+
+      b.ship_at([0,1]).must_equal nil
+
+      b.ship_at([0,2]).sort.must_equal [[0,2], [1,2]].sort
+      b.ship_at([1,2]).sort.must_equal [[0,2], [1,2]].sort
+
+      b.ship_at([3,2]).sort.must_equal [[3,1],[3,2],[3,3]].sort
+    end
+  end
+
+  describe "alive?" do
+    it "should return true if at least one cell on the board is :ship" do
+      Board.new(sample: [[0,0], [0,0]]).alive?.must_equal false
+      Board.new(sample: [[2,2], [2,1]]).alive?.must_equal true
+      Board.new(sample: [[2,3], [3,0]]).alive?.must_equal false
     end
   end
 
